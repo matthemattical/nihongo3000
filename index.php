@@ -42,7 +42,7 @@
       $max_kana_num = 0;
       $new_dict = array();
 
-      //set_time_limit(0);
+      set_time_limit(0);
 
 
       if ( $query_common_word = $mysqli->query("SELECT word FROM common") ) {
@@ -70,7 +70,9 @@
                       $is_new = 1;
                     } else {
                       // This is a new kana for an existing word (kanji/def pair)
-                      $existing_kana = unserialize($existing_kanji['kana']);
+                      if ( ! empty ($existing_kanji['kana']) ) {
+                        $existing_kana = unserialize(base64_decode($existing_kanji['kana']));
+                      }
                       $kana = $mysqli->real_escape_string($kana);
                       if ( !is_array($existing_kana) ) {
                         $new_kana = array($existing_kana, $kana);
@@ -79,7 +81,7 @@
                         $new_kana[] = $kana;
                       }
 
-                      $kana_serial = serialize($new_kana);
+                      $kana_serial = base64_encode(serialize($new_kana));
                       $def01 = $mysqli->real_escape_string($def01);
 
                       if ( !$mysqli->query("UPDATE newdict SET kana = '$kana_serial' WHERE kanji = '$kanji' AND def01 = '$def01'") ) {
@@ -99,8 +101,14 @@
                 // echo "adding kanji: <pre>" . print_r($dictionary_kanji, 1) . "</pre>";
                 // if it is new, let us add it okay?
                 $values = "";
+                // serialize those kana no matter what
+                if ( ! empty($dictionary_kanji['kana']) ) {
+                  $dictionary_kanji['kana'] = base64_encode(serialize($dictionary_kanji['kana']));
+                }
                 foreach ( $dictionary_kanji as $key => $value ) {
-                  $value = $mysqli->real_escape_string($value);
+                  if ( $key != 'kana' ) {
+                    $value = $mysqli->real_escape_string($value);
+                  }
                   $values .= "'$value', ";
                 }
                 $values = rtrim($values, ", ");

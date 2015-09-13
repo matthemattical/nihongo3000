@@ -46,7 +46,9 @@
 
 
       if ( $query_common_word = $mysqli->query("SELECT word FROM common") ) {
-        while ( $common_word = $query_common_word->fetch_assoc() ) {
+        for ( $x = 0; $x < 100; $x++ ) {
+          $common_word = $query_common_word->fetch_assoc();
+        // while ( $common_word = $query_common_word->fetch_assoc() ) {
           // echo "common_word: <pre>" . print_r($common_word, 1) . "</pre>";
           $word = $mysqli->real_escape_string($common_word['word']);
 
@@ -57,40 +59,76 @@
               $kanji = $word;
               $kana = $dictionary_kanji['kana'];
               $def01 = $dictionary_kanji['def01'];
-              $is_new = 0;
+
+              echo "<p>new kanji: " . $dictionary_kanji['kanji'] . " -- " . $dictionary_kanji['kana'] . " -- " . $dictionary_kanji['def01'] . "</p>";
+              echo "<p>kanji: $kanji</p><pre>" . print_r($dictionary_kanji, 1) . "</pre>";
 
               // Check for any words already in newdict using the same kanji
               if ( $query_newdict_kanji = $mysqli->query("SELECT * FROM newdict WHERE kanji='$kanji'")) {
                 if ( $query_newdict_kanji->num_rows != 0 ) {
-                  while ( $existing_kanji = $query_newdict_kanji->fetch_assoc() ) {
-                    // echo "existing_kanji: <pre>" . print_r($existing_kanji, 1) . "</pre>";
-                    if ( $existing_kanji['def01'] != $def01 ) {
-                      // echo "new word, same kanji";
-                      // This is a new word using the same kanji as another and we should add this to newdict
-                      $is_new = 1;
-                    } else {
-                      // This is a new kana for an existing word (kanji/def pair)
-                      if ( ! empty ($existing_kanji['kana']) ) {
-                        $existing_kana = unserialize(base64_decode($existing_kanji['kana']));
-                      }
-                      $kana = $mysqli->real_escape_string($kana);
-                      if ( !is_array($existing_kana) ) {
-                        $new_kana = array($existing_kana, $kana);
+                  echo "<p>********** matches: " . $query_newdict_kanji->num_rows . " ***********</p>";
+                  while ( $newdict_kanji = $query_newdict_kanji->fetch_assoc() ) {
+                    $is_new = 0;
+                    echo "<p>comparing to: " . $newdict_kanji['kanji'] . " -- " . $newdict_kanji['kana'] . " -- " . $newdict_kanji['def01'] . "</p>";
+                    echo "<p>kanji: " . $newdict_kanji['kanji'] . "</p><pre>" . print_r($newdict_kanji, 1) . "</pre>";
+                    $diffarray = array_diff($dictionary_kanji, $newdict_kanji);
+                    echo "<p>------------------- RESULT ------------------</p>";
+                    echo "<p>kanji: $kanji</p><pre>" . print_r($diffarray, 1) . "</pre>";
+                    echo "<p>----------------- END RESULT ----------------</p>";
+                    if ( !empty( $diffarray ) ) {
+                      echo "<p>-------------------- THEY ARE DIFFERENT -------------------------</p>";
+                      /*
+                      echo "<h3>$kanji</h3>";
+                      echo "<pre>" . print_r($dictionary_kanji, 1) . "</pre>";
+                      echo "<p>------------------- versus ------------------</p>";
+                      echo "<pre>" . print_r($newdict_kanji, 1) . "</pre>";
+                      echo "<p>------------------- result ------------------</p>";
+                      echo "<p>x: $x | kanji: $kanji</p><pre>" . print_r($diffarray, 1) . "</pre>";
+                      echo "<p>---------------------------------------------</p>";
+                      echo "<p>---------------------------------------------</p>";
+                      echo "<p>---------------------------------------------</p>";
+                      */
+                      // This isn't a duplicate (of which there seem to be many... ?)
+                      $newdict_key = $newdict_kanji['key'];
+
+                      // echo "existing_kanji: <pre>" . print_r($existing_kanji, 1) . "</pre>";
+                      if ( $newdict_kanji['def01'] != $def01 ) {
+                        echo "<p>-------------------- SAME KANJI, DIFFERENT DEFINITION-------------------------</p>";
+                        // This is a new word using the same kanji as another and we should add this to newdict
+                        $is_new = 1;
                       } else {
-                        $new_kana = $existing_kana;
-                        $new_kana[] = $kana;
-                      }
+                        if ( $newdict_kanji['kana'] != ($kana . "; ") ) {
+                          echo "<p>----------------- IT'S NOT ENTIRELY THE SAME -----------------------</p>";
+                          if ( 0 ===  preg_match("/^$kana\; /", $newdict_kanji['kana']) && 0 ===  preg_match("/ $kana\; /", $newdict_kanji['kana']) ) {
+                            echo "<p>----------------- AND IT DOESN'T SHOW UP IN A LIST -----------------------</p>";
+                            echo "<p>-------------------- SAME KANJI, SAME DEFINITION-------------------------</p>";
+                            // This is not a new word, but it's a new kana for this kanji / def pair
+                            $existing_kana = "";
+                            // If there is, in fact, already a kana...
+                            // (the dictionary db stores the character in the kanji column if there is no kanji...)
+                            if ( !empty($newdict_kanji['kana'] ) ) {
+                              $existing_kana = $newdict_kanji['kana'];
+                            }
+                            $kana = $mysqli->real_escape_string($kana);
+                            $new_kana = $existing_kana . $kana . "; ";
 
-                      $kana_serial = base64_encode(serialize($new_kana));
-                      $def01 = $mysqli->real_escape_string($def01);
+                            $def01 = $mysqli->real_escape_string($def01);
 
-                      if ( !$mysqli->query("UPDATE newdict SET kana = '$kana_serial' WHERE kanji = '$kanji' AND def01 = '$def01'") ) {
-                        printf("Error updating: %s\n", $mysqli->error);
-                        exit();
+                            echo "<p>----------------- UPDATING WITH KANA -----------------------</p>";
+                            if ( !$mysqli->query("UPDATE newdict SET kana = '$new_kana' WHERE `key` = $newdict_key") ) {
+                              printf("Error updating: %s\n", $mysqli->error);
+                              exit();
+                            }
+                          }
+                        }
+                        echo "<p>-------------------- BUT NOT DIFFERENT ENOUGH (KANA ALREADY PRESENT) -------------------------</p>";
                       }
+                    } else {
+                      echo "<p>-------------------- THEY ARE THE SAME -------------------------</p>";
                     }
                   }
                 } else {
+                  echo "<p>-------------------- COMPLETELY NEW -------------------------</p>";
                   // There is no existing entry in newdict and we should add this
                   // echo "New word, new kanji";
                   $is_new = 1;
@@ -103,7 +141,7 @@
                 $values = "";
                 // serialize those kana no matter what
                 if ( ! empty($dictionary_kanji['kana']) ) {
-                  $dictionary_kanji['kana'] = base64_encode(serialize($dictionary_kanji['kana']));
+                  $dictionary_kanji['kana'] = $mysqli->real_escape_string($dictionary_kanji['kana']) . "; ";
                 }
                 foreach ( $dictionary_kanji as $key => $value ) {
                   if ( $key != 'kana' ) {
@@ -112,6 +150,8 @@
                   $values .= "'$value', ";
                 }
                 $values = rtrim($values, ", ");
+
+                echo "<p>----------------- ADDING NEW KANJI -----------------------</p>";
 
                 if ( !$mysqli->query("INSERT INTO newdict ($columns) VALUES($values)") ) {
                   printf("Error inserting: %s\n", $mysqli->error);

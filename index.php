@@ -53,55 +53,54 @@
           $word = $mysqli->real_escape_string($common_word['word']);
 
           // Grab all instances of this word from dictionary DB, using kanji
-          if ($query_dictionary_kanji = $mysqli->query("SELECT $columns FROM dictionary WHERE kanji='$word'")) {
+          if ($query_dictionary_kanji = $mysqli->query("SELECT $columns FROM dictionary WHERE kanji = '$word'")) {
             while ($dictionary_kanji = $query_dictionary_kanji->fetch_assoc()) {
               // echo "dictionary_kanji: <pre>" . print_r($dictionary_kanji, 1) . "</pre>";
               $kanji = $word;
               $kana = $dictionary_kanji['kana'];
-              $def01 = $dictionary_kanji['def01'];
+
+              // Check for (P)... remove from array (doesn't matter for my use)
+              // NOTE: (P) marks common definitions... I think...
+              if ( $p_loc = array_search('(P)', $dictionary_kanji) ) {
+                $dictionary_kanji[$p_loc] = '';
+              }
 
               echo "<p>new kanji: " . $dictionary_kanji['kanji'] . " -- " . $dictionary_kanji['kana'] . " -- " . $dictionary_kanji['def01'] . "</p>";
               echo "<p>kanji: $kanji</p><pre>" . print_r($dictionary_kanji, 1) . "</pre>";
 
               // Check for any words already in newdict using the same kanji
-              if ( $query_newdict_kanji = $mysqli->query("SELECT * FROM newdict WHERE kanji='$kanji'")) {
+              if ( $query_newdict_kanji = $mysqli->query("SELECT * FROM newdict WHERE kanji LIKE '%$kanji%'")) {
                 if ( $query_newdict_kanji->num_rows != 0 ) {
+                  // We'll assume this is new until proven otherwise
+                  $is_new = 1;
                   echo "<p>********** matches: " . $query_newdict_kanji->num_rows . " ***********</p>";
                   while ( $newdict_kanji = $query_newdict_kanji->fetch_assoc() ) {
-                    $is_new = 0;
-                    echo "<p>comparing to: " . $newdict_kanji['kanji'] . " -- " . $newdict_kanji['kana'] . " -- " . $newdict_kanji['def01'] . "</p>";
-                    echo "<p>kanji: " . $newdict_kanji['kanji'] . "</p><pre>" . print_r($newdict_kanji, 1) . "</pre>";
-                    $diffarray = array_diff($dictionary_kanji, $newdict_kanji);
-                    echo "<p>------------------- RESULT ------------------</p>";
-                    echo "<p>kanji: $kanji</p><pre>" . print_r($diffarray, 1) . "</pre>";
-                    echo "<p>----------------- END RESULT ----------------</p>";
-                    if ( !empty( $diffarray ) ) {
-                      echo "<p>-------------------- THEY ARE DIFFERENT -------------------------</p>";
-                      /*
-                      echo "<h3>$kanji</h3>";
-                      echo "<pre>" . print_r($dictionary_kanji, 1) . "</pre>";
-                      echo "<p>------------------- versus ------------------</p>";
-                      echo "<pre>" . print_r($newdict_kanji, 1) . "</pre>";
-                      echo "<p>------------------- result ------------------</p>";
-                      echo "<p>x: $x | kanji: $kanji</p><pre>" . print_r($diffarray, 1) . "</pre>";
-                      echo "<p>---------------------------------------------</p>";
-                      echo "<p>---------------------------------------------</p>";
-                      echo "<p>---------------------------------------------</p>";
-                      */
-                      // This isn't a duplicate (of which there seem to be many... ?)
+                    if ( $is_new ) {
                       $newdict_key = $newdict_kanji['key'];
 
-                      // echo "existing_kanji: <pre>" . print_r($existing_kanji, 1) . "</pre>";
-                      if ( $newdict_kanji['def01'] != $def01 ) {
-                        echo "<p>-------------------- SAME KANJI, DIFFERENT DEFINITION-------------------------</p>";
-                        // This is a new word using the same kanji as another and we should add this to newdict
-                        $is_new = 1;
-                      } else {
-                        if ( $newdict_kanji['kana'] != ($kana . "; ") ) {
-                          echo "<p>----------------- IT'S NOT ENTIRELY THE SAME -----------------------</p>";
-                          if ( 0 ===  preg_match("/^$kana\; /", $newdict_kanji['kana']) && 0 ===  preg_match("/ $kana\; /", $newdict_kanji['kana']) ) {
-                            echo "<p>----------------- AND IT DOESN'T SHOW UP IN A LIST -----------------------</p>";
-                            echo "<p>-------------------- SAME KANJI, SAME DEFINITION-------------------------</p>";
+                      // Check for (P)... remove from array (doesn't matter for my use)
+                      // NOTE: (P) marks common definitions... I think...
+                      if ( $p_loc = array_search('(P)', $newdict_kanji) ) {
+                        $newdict_kanji[$p_loc] = '';
+                      }
+
+                      echo "<p>comparing to: " . $newdict_kanji['kanji'] . " -- " . $newdict_kanji['kana'] . " -- " . $newdict_kanji['def01'] . "</p>";
+                      echo "<p>kanji: " . $newdict_kanji['kanji'] . "</p><pre>" . print_r($newdict_kanji, 1) . "</pre>";
+
+                      $diffarray = array_diff($dictionary_kanji, $newdict_kanji);
+                      echo "<p>------------------- RESULT ------------------</p>";
+                      echo "<p>kanji: $kanji</p><pre>" . print_r($diffarray, 1) . "</pre>";
+                      echo "<p>----------------- END RESULT ----------------</p>";
+                      if ( !empty( $diffarray ) ) {
+                        echo "<p>-------------------- THEY ARE DIFFERENT -------------------------</p>";
+
+                        if ( 1 == count($diffarray) && array_key_exists('kana', $diffarray) ) {
+                          // Maybe it's only the kana...
+                          // It's definitely not new
+                          $is_new = 0;
+                          echo "<p>-------------------- ONLY THE KANA IS DIFFERENT-------------------------</p>";
+                          if ( $newdict_kanji['kana'] != ($kana . "; ") && 0 ===  preg_match("/^$kana\; /", $newdict_kanji['kana']) && 0 ===  preg_match("/ $kana\; /", $newdict_kanji['kana']) ) {
+                            echo "<p>-------------------- DIFFERENT KANA, SAME EVERYTHING ELSE -------------------------</p>";
                             // This is not a new word, but it's a new kana for this kanji / def pair
                             $existing_kana = "";
                             // If there is, in fact, already a kana...
@@ -112,19 +111,46 @@
                             $kana = $mysqli->real_escape_string($kana);
                             $new_kana = $existing_kana . $kana . "; ";
 
-                            $def01 = $mysqli->real_escape_string($def01);
-
                             echo "<p>----------------- UPDATING WITH KANA -----------------------</p>";
                             if ( !$mysqli->query("UPDATE newdict SET kana = '$new_kana' WHERE `key` = $newdict_key") ) {
                               printf("Error updating: %s\n", $mysqli->error);
                               exit();
                             }
+                          } 
+                          echo "<p>-------------------- KANA ALREADY PRESENT - NO CHANGE -------------------------</p>";
+                        } else if ( 1 == count($diffarray) && array_key_exists('kanji', $diffarray) ) {
+                          // Maybe it's only the kanji...
+                          // It's definitely not new
+                          $is_new = 0;
+                          echo "<p>-------------------- ONLY THE KANJI IS DIFFERENT-------------------------</p>";
+                          if ( $newdict_kanji['kanji'] != ($kanji . "; ") && 0 ===  preg_match("/^$kanji\; /", $newdict_kanji['kanji']) && 0 ===  preg_match("/ $kanji\; /", $newdict_kanji['kanji']) ) {
+                            echo "<p>-------------------- DIFFERENT KANJI, SAME EVERYTHING ELSE -------------------------</p>";
+                            // This is not a new word, but it's a new kanji for this kana / def pair
+                            $existing_kanji = "";
+                            // If there is, in fact, already a kanji or two...
+                            if ( !empty($newdict_kanji['kanji'] ) ) {
+                              $existing_kanji = $newdict_kanji['kanji'];
+                            }
+                            $kanji = $mysqli->real_escape_string($kanji);
+                            $new_kanji = $existing_kanji . $kanji . "; ";
+
+                            echo "<p>----------------- UPDATING WITH KANJI -----------------------</p>";
+                            if ( !$mysqli->query("UPDATE newdict SET kanji = '$new_kanji' WHERE `key` = $newdict_key") ) {
+                              printf("Error updating: %s\n", $mysqli->error);
+                              exit();
+                            }
                           }
+                          echo "<p>-------------------- KANJI ALREADY PRESENT - NO CHANGE -------------------------</p>";
+                        } else {
+                          echo "<p>-------------------- MORE THAN ONE DIFFERENCE OR DIFFERENCE IN DEFS -------------------------</p>";
+                          // There are differences, but they're not only the kana or only the kanji
+                          // I guess it's a new word...
+                          $is_new = 1;
                         }
-                        echo "<p>-------------------- BUT NOT DIFFERENT ENOUGH (KANA ALREADY PRESENT) -------------------------</p>";
+                      } else {
+                        echo "<p>-------------------- THEY ARE THE SAME -------------------------</p>";
+                        $is_new = 0;
                       }
-                    } else {
-                      echo "<p>-------------------- THEY ARE THE SAME -------------------------</p>";
                     }
                   }
                 } else {

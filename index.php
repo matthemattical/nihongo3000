@@ -13,14 +13,18 @@
 
       $dict = array();
       $common = array();
+      // We'll be using this to convert all def columns into one value later
+      $defs = "";
 
-      $columns = 'kanji, kana, def01, def02, def03, def04, def05, def06, def07, def08, def09, '; 
+      $columns = 'kanji, kana, '; 
+      $defs_for_sql = 'def01, def02, def03, def04, def05, def06, def07, def08, def09, ';
       for ($x = 10; $x < 53; $x++) {
-        $columns .= 'def' . $x;
+        $defs_for_sql .= 'def' . $x;
         if ($x != 52) {
-          $columns .= ', ';
+          $defs_for_sql .= ', ';
         }
       }
+      $columns .= $defs_for_sql;
 
       $mysqli = new mysqli("localhost", "jmdict", "jmdict", "jmdict");
 
@@ -46,9 +50,9 @@
 
 
       if ( $query_common_word = $mysqli->query("SELECT word FROM common") ) {
-        for ( $x = 0; $x < 100; $x++ ) {
-          $common_word = $query_common_word->fetch_assoc();
-        // while ( $common_word = $query_common_word->fetch_assoc() ) {
+        // for ( $x = 0; $x < 100; $x++ ) {
+          //$common_word = $query_common_word->fetch_assoc();
+        while ( $common_word = $query_common_word->fetch_assoc() ) {
           // echo "common_word: <pre>" . print_r($common_word, 1) . "</pre>";
           $word = $mysqli->real_escape_string($common_word['word']);
 
@@ -65,7 +69,19 @@
                 $dictionary_kanji[$p_loc] = '';
               }
 
-              echo "<p>new kanji: " . $dictionary_kanji['kanji'] . " -- " . $dictionary_kanji['kana'] . " -- " . $dictionary_kanji['def01'] . "</p>";
+              $defs_array = explode(', ', $defs_for_sql);
+              $defs = "";
+              foreach ( $defs_array as $def_column ) {
+                $defs .= $mysqli->real_escape_string($dictionary_kanji[$def_column]) . "; ";
+              }
+              $defs = rtrim($defs, "; ");
+
+              $dictionary_kanji = array(
+                'kanji' => $kanji,
+                'kana' => $kana,
+                'def' => $defs,
+              );
+
               echo "<p>kanji: $kanji</p><pre>" . print_r($dictionary_kanji, 1) . "</pre>";
 
               // Check for any words already in newdict using the same kanji
@@ -84,7 +100,7 @@
                         $newdict_kanji[$p_loc] = '';
                       }
 
-                      echo "<p>comparing to: " . $newdict_kanji['kanji'] . " -- " . $newdict_kanji['kana'] . " -- " . $newdict_kanji['def01'] . "</p>";
+                      echo "<p>comparing to: " . $newdict_kanji['kanji'] . " -- " . $newdict_kanji['kana'] . " -- " . $newdict_kanji['def'] . "</p>";
                       echo "<p>kanji: " . $newdict_kanji['kanji'] . "</p><pre>" . print_r($newdict_kanji, 1) . "</pre>";
 
                       $diffarray = array_diff($dictionary_kanji, $newdict_kanji);
@@ -162,24 +178,34 @@
               }
 
               if ( $is_new ) {
-                // echo "adding kanji: <pre>" . print_r($dictionary_kanji, 1) . "</pre>";
                 // if it is new, let us add it okay?
                 $values = "";
                 // serialize those kana no matter what
                 if ( ! empty($dictionary_kanji['kana']) ) {
                   $dictionary_kanji['kana'] = $mysqli->real_escape_string($dictionary_kanji['kana']) . "; ";
                 }
+
+                $kanji = "";
+                $kana = "";
+                $defs = "";
                 foreach ( $dictionary_kanji as $key => $value ) {
-                  if ( $key != 'kana' ) {
-                    $value = $mysqli->real_escape_string($value);
-                  }
-                  $values .= "'$value', ";
+                  switch ($key) {
+                    case 'kanji':
+                      $kanji = $mysqli->real_escape_string($value);
+                      break;
+                    case 'kana':
+                      $kana = $value;
+                      break;
+                    default:
+                      $defs .= $mysqli->real_escape_string($value);
+                  } 
                 }
-                $values = rtrim($values, ", ");
+                $values = "'" . $kanji . "', '" . $kana . "', '" . $defs . "'";
+                $newdict_columns = 'kanji, kana, def';
 
                 echo "<p>----------------- ADDING NEW KANJI -----------------------</p>";
 
-                if ( !$mysqli->query("INSERT INTO newdict ($columns) VALUES($values)") ) {
+                if ( !$mysqli->query("INSERT INTO newdict ($newdict_columns) VALUES($values)") ) {
                   printf("Error inserting: %s\n", $mysqli->error);
                   exit();
                 }
@@ -192,6 +218,8 @@
         $query_common_word->free();
       }
       $mysqli->close();
+
+      echo "<p>Booyah: ブーヤー</p>";
     ?>
   </body>
 </html>
